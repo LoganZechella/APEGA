@@ -145,4 +145,4 @@ Based on the extensive development guide "Automated Practice Exam Generation Age
 
 ## Contributors
 
-- [Your Name]
+- Logan Zechella

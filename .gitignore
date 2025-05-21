@@ -8,3 +8,22 @@ APEGA.md
 .env.production.local
 
 node_modules/
+.venv/
+
+*.log
+*.log.*
+*.log.*.*
+*.log.*.*.*
+*.log.*.*.*.*
+*.log.*.*.*.*.*
+*.log.*.*.*.*.*.*
+
+*.pdf
+*.txt
+*.json
+*.jsonl
+*.jsonl.gz
+*.jsonl.gz.part
+*.jsonl.gz.part.*
+
+qdrant_storage/
