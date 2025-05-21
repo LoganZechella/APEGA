@@ -1,0 +1,42 @@
+# Core dependencies
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+
+# PDF Parsing
+PyMuPDF>=1.23.0  # For PDF text and structure extraction
+pytesseract>=0.3.10  # For OCR support, if needed
+Pillow>=10.0.0  # Required for image processing
+
+# Vector Database
+qdrant-client>=1.6.0  # Qdrant vector database client
+
+# Embeddings & LLM API access
+openai>=1.0.0  # For o4-mini and text-embedding-3-large
+google-generativeai>=0.3.0  # For Gemini 2.5 Pro
+
+# RAG & LLM Orchestration
+langchain>=0.1.0  # Base components for LLM applications
+langchain-community>=0.0.10  # Community extensions
+langgraph>=0.0.20  # DAG-based agent workflows
+langchain-core>=0.1.0  # Core LangChain components
+
+# Text processing
+nltk>=3.8.1  # For text tokenization and processing
+sentence-transformers>=2.2.2  # For semantic text splitting, if needed
+
+# Output formatting
+jinja2>=3.1.2  # For HTML templating
+weasyprint>=60.0  # For PDF generation from HTML
+markdown>=3.5  # For markdown formatting
+
+# BM25 for sparse search
+rank-bm25>=0.2.2  # For keyword-based search
+
+# Utility
+tqdm>=4.66.0  # For progress bars
+tenacity>=8.2.3  # For robust retry mechanisms
+loguru>=0.7.0  # Better logging
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0

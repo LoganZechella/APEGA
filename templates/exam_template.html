@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ exam_title }}</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <style>
+        /* Critical inline styles to ensure basic styling if external CSS fails */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+        }
+        .question {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+        }
+        .question-stem {
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .options {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .option {
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .option:hover {
+            background-color: #f9f9f9;
+        }
+        .explanation {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-left: 3px solid #28a745;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0069d9;
+        }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px 0;
+        }
+        .domain-filter {
+            margin-bottom: 20px;
+        }
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            display: none;
+        }
+        .correct {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .incorrect {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        @media print {
+            .navigation, .domain-filter, .show-explanation, .check-answer, .submit-exam {
+                display: none;
+            }
+            .explanation {
+                display: block !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ exam_title }}</h1>
+            <p>Generated on {{ generation_date }}</p>
+            <p>Total Questions: {{ total_questions }}</p>
+        </div>
+        
+        <div class="domain-filter">
+            <label for="domain-select">Filter by Domain:</label>
+            <select id="domain-select" onchange="filterByDomain()">
+                <option value="all">All Domains</option>
+                {% for domain in domains %}
+                <option value="{{ domain.id }}">{{ domain.name }} ({{ domain.count }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div id="exam-container">
+            {% for question in questions %}
+            <div class="question" id="question-{{ loop.index }}" data-domain="{{ question.domain_id }}">
+                <div class="question-number">Question {{ loop.index }} of {{ total_questions }}</div>
+                <div class="question-domain">Domain: {{ question.domain }}</div>
+                {% if question.task %}
+                <div class="question-task">Task: {{ question.task }}</div>
+                {% endif %}
+                <div class="question-stem">{{ question.stem }}</div>
+                <div class="options" id="options-{{ loop.index }}">
+                    {% for option in question.options %}
+                    <div class="option" id="option-{{ loop.index }}-{{ option.id }}" onclick="selectOption('{{ loop.index }}', '{{ option.id }}')">
+                        <span class="option-id">{{ option.id }}.</span>
+                        <span class="option-text">{{ option.text }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button class="check-answer" onclick="checkAnswer('{{ loop.index }}', '{{ question.correct_id }}')">Check Answer</button>
+                <button class="show-explanation" onclick="toggleExplanation('{{ loop.index }}')">Show Explanation</button>
+                <div class="explanation" id="explanation-{{ loop.index }}">
+                    <p><strong>Correct Answer:</strong> {{ question.correct_id }}</p>
+                    <p><strong>Explanation:</strong> {{ question.explanation }}</p>
+                    {% if question.difficulty %}
+                    <p><strong>Difficulty:</strong> {{ question.difficulty }}</p>
+                    {% endif %}
+                    {% if question.cognitive_skill %}
+                    <p><strong>Cognitive Skill:</strong> {{ question.cognitive_skill }}</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="navigation">
+            <button id="prev-button" onclick="navigateQuestion(-1)" disabled>Previous</button>
+            <span id="question-counter">Question 1 of {{ total_questions }}</span>
+            <button id="next-button" onclick="navigateQuestion(1)">Next</button>
+        </div>
+        
+        <button class="submit-exam" onclick="submitExam()">Submit Exam</button>
+        
+        <div class="results" id="results-container">
+            <h2>Exam Results</h2>
+            <p id="score-display"></p>
+            <div id="question-summary"></div>
+            <button onclick="window.print()">Print Results</button>
+        </div>
+    </div>
+
+    <script>
+        // Store user answers and question state
+        const userAnswers = {};
+        let currentQuestionIndex = 0;
+        const totalQuestions = {{ total_questions }};
+        
+        // Store question data for JavaScript access
+        const questionsData = {{ questions|json }};
+        
+        // Initialize the exam
+        document.addEventListener('DOMContentLoaded', function() {
+            showOnlyCurrentQuestion();
+            updateQuestionCounter();
+        });
+        
+        // Select an option
+        function selectOption(questionNum, optionId) {
+            // Remove selection from all options in this question
+            const options = document.querySelectorAll(`#options-${questionNum} .option`);
+            options.forEach(option => option.classList.remove('selected'));
+            
+            // Add selection to clicked option
+            document.getElementById(`option-${questionNum}-${optionId}`).classList.add('selected');
+            
+            // Store the answer
+            userAnswers[questionNum] = optionId;
+        }
+        
+        // Check answer
+        function checkAnswer(questionNum, correctId) {
+            const selectedOption = document.querySelector(`#options-${questionNum} .option.selected`);
+            
+            if (!selectedOption) {
+                alert('Please select an answer first.');
+                return;
+            }
+            
+            // Get selected option ID
+            const selectedId = selectedOption.id.split('-')[2];
+            
+            // Reset all options
+            const options = document.querySelectorAll(`#options-${questionNum} .option`);
+            options.forEach(option => {
+                option.classList.remove('correct', 'incorrect');
+            });
+            
+            // Mark as correct or incorrect
+            if (selectedId === correctId) {
+                selectedOption.classList.add('correct');
+            } else {
+                selectedOption.classList.add('incorrect');
+                // Highlight the correct answer
+                document.getElementById(`option-${questionNum}-${correctId}`).classList.add('correct');
+            }
+            
+            // Show explanation
+            document.getElementById(`explanation-${questionNum}`).style.display = 'block';
+            document.querySelector(`#question-${questionNum} .show-explanation`).textContent = 'Hide Explanation';
+        }
+        
+        // Toggle explanation visibility
+        function toggleExplanation(questionNum) {
+            const explanationDiv = document.getElementById(`explanation-${questionNum}`);
+            const button = document.querySelector(`#question-${questionNum} .show-explanation`);
+            
+            if (explanationDiv.style.display === 'block') {
+                explanationDiv.style.display = 'none';
+                button.textContent = 'Show Explanation';
+            } else {
+                explanationDiv.style.display = 'block';
+                button.textContent = 'Hide Explanation';
+            }
+        }
+        
+        // Navigate between questions
+        function navigateQuestion(direction) {
+            // Hide current question
+            document.getElementById(`question-${currentQuestionIndex + 1}`).style.display = 'none';
+            
+            // Update index
+            currentQuestionIndex += direction;
+            
+            // Show new question
+            showOnlyCurrentQuestion();
+            updateQuestionCounter();
+            
+            // Update navigation buttons
+            updateNavigationButtons();
+        }
+        
+        // Show only the current question
+        function showOnlyCurrentQuestion() {
+            // Hide all questions
+            const questions = document.querySelectorAll('.question');
+            questions.forEach(question => {
+                question.style.display = 'none';
+            });
+            
+            // Show current question
+            const currentQuestion = document.getElementById(`question-${currentQuestionIndex + 1}`);
+            if (currentQuestion) {
+                currentQuestion.style.display = 'block';
+            }
+        }
+        
+        // Update question counter
+        function updateQuestionCounter() {
+            document.getElementById('question-counter').textContent = `Question ${currentQuestionIndex + 1} of ${totalQuestions}`;
+        }
+        
+        // Update navigation buttons
+        function updateNavigationButtons() {
+            document.getElementById('prev-button').disabled = (currentQuestionIndex === 0);
+            document.getElementById('next-button').disabled = (currentQuestionIndex === totalQuestions - 1);
+        }
+        
+        // Filter questions by domain
+        function filterByDomain() {
+            const selectedDomain = document.getElementById('domain-select').value;
+            const questions = document.querySelectorAll('.question');
+            
+            if (selectedDomain === 'all') {
+                // Show all questions in sequence mode
+                currentQuestionIndex = 0;
+                showOnlyCurrentQuestion();
+                updateQuestionCounter();
+                updateNavigationButtons();
+            } else {
+                // Show only questions from selected domain
+                questions.forEach(question => {
+                    question.style.display = 'none';
+                });
+                
+                const domainQuestions = document.querySelectorAll(`.question[data-domain="${selectedDomain}"]`);
+                domainQuestions.forEach(question => {
+                    question.style.display = 'block';
+                });
+                
+                // Disable navigation in domain filter mode
+                document.getElementById('question-counter').textContent = `Showing ${domainQuestions.length} questions`;
+                document.getElementById('prev-button').disabled = true;
+                document.getElementById('next-button').disabled = true;
+            }
+        }
+        
+        // Submit exam and show results
+        function submitExam() {
+            if (Object.keys(userAnswers).length === 0) {
+                alert('Please answer at least one question before submitting.');
+                return;
+            }
+            
+            // Calculate score
+            let correctCount = 0;
+            
+            for (let i = 1; i <= totalQuestions; i++) {
+                const userAnswer = userAnswers[i];
+                if (userAnswer) {
+                    const correctAnswer = questionsData[i-1].correct_id;
+                    if (userAnswer === correctAnswer) {
+                        correctCount++;
+                    }
+                }
+            }
+            
+            const scorePercentage = (correctCount / totalQuestions) * 100;
+            
+            // Display results
+            document.getElementById('score-display').textContent = 
+                `You scored ${correctCount} out of ${totalQuestions} (${scorePercentage.toFixed(1)}%)`;
+            
+            // Generate question summary
+            let summaryHTML = '<h3>Question Summary</h3><ul>';
+            
+            for (let i = 1; i <= totalQuestions; i++) {
+                const userAnswer = userAnswers[i] || 'Not answered';
+                const correctAnswer = questionsData[i-1].correct_id;
+                const isCorrect = userAnswer === correctAnswer;
+                
+                summaryHTML += `<li>Question ${i}: ${isCorrect ? '✓ Correct' : '✗ Incorrect'} (Your answer: ${userAnswer}, Correct answer: ${correctAnswer})</li>`;
+            }
+            
+            summaryHTML += '</ul>';
+            document.getElementById('question-summary').innerHTML = summaryHTML;
+            
+            // Show results container
+            document.getElementById('results-container').style.display = 'block';
+            
+            // Scroll to results
+            document.getElementById('results-container').scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
