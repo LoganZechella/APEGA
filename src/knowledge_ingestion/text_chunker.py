@@ -60,8 +60,8 @@ class TextChunker:
                 # Import here to avoid unnecessary dependencies if not using semantic chunking
                 from sentence_transformers import SentenceTransformer
                 self.semantic_splitter = SentenceTransformer('all-MiniLM-L6-v2')
-            except ImportError:
-                logger.warning("sentence-transformers not installed. Falling back to paragraph chunking.")
+            except Exception as e:
+                logger.warning(f"Semantic splitter not available ({e}). Falling back to paragraph chunking.")
                 self.strategy = ChunkingStrategy.PARAGRAPH
     
     def chunk_document(self, parsed_doc: ParsedDocument) -> List[TextChunk]:

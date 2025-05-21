@@ -44,11 +44,20 @@ class VectorDBManager:
         self.vector_dimensions = vector_dimensions
         self.distance_metric = distance_metric
         
-        # Initialize client
+        logger.debug(f"Attempting to initialize QdrantClient with URL: '{self.url}' and API key: '{self.api_key}'")
+        # Initialize client with parsed URL to support HTTP without SSL errors
+        import urllib.parse
+        parsed = urllib.parse.urlparse(self.url)
+        host = parsed.hostname or self.url
+        port = parsed.port
+        use_https = parsed.scheme == 'https'
+
         self.client = qdrant_client.QdrantClient(
-            url=self.url,
+            host=host,
+            port=port,
             api_key=self.api_key,
-            timeout=60.0
+            timeout=60.0,
+            https=use_https
         )
         
         # Create collection if it doesn't exist
