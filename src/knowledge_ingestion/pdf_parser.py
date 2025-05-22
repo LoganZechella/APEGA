@@ -222,9 +222,18 @@ class PdfParser:
                 
                 # Extract data from the table
                 rows = []
-                for row_cells in table.extract():
-                    # Clean cell text
-                    rows.append([self._clean_text(cell.replace("\n", " ").strip()) for cell in row_cells])
+                for row_idx, row_cells in enumerate(table.extract()): 
+                    cleaned_row = []
+                    if row_cells: # Ensure row_cells is not None
+                        for cell_idx, cell in enumerate(row_cells): 
+                            if cell is None:
+                                cleaned_row.append("") 
+                            else:
+                                cell_text = str(cell) if not isinstance(cell, str) else cell
+                                # Ensure cell_text is not None before replace/strip
+                                cell_text_processed = cell_text.replace("\n", " ").strip() if cell_text is not None else ""
+                                cleaned_row.append(self._clean_text(cell_text_processed))
+                    rows.append(cleaned_row)
                 
                 # Only include non-empty tables
                 if rows and any(cell for row in rows for cell in row):
@@ -246,20 +255,26 @@ class PdfParser:
         return tables
     
     @staticmethod
-    def _clean_text(text: str) -> str:
+    def _clean_text(text: Optional[str]) -> str: # Allow Optional[str] for input
         """
-        Clean extracted text by removing excessive whitespace and fixing common issues.
-        
-        Args:
-            text: Text to clean
+        Clean text by removing extra spaces and attempting to fix ligatures.
+        """
+        if text is None: # Handle None input gracefully
+            return ""
             
-        Returns:
-            Cleaned text
-        """
         # Replace multiple spaces with a single space
-        text = re.sub(r'\s+', ' ', text)
+        cleaned_text = re.sub(r'\s+', ' ', text).strip()
         
-        # Fix broken words at line breaks (e.g., "sam- ple" -> "sample")
-        text = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', text)
-        
-        return text.strip()
+        # Basic ligature replacement (add more as needed)
+        # Ensure cleaned_text is a string before calling replace
+        if isinstance(cleaned_text, str):
+            ligatures = {
+                "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
+                "ﬅ": "ft", "ﬆ": "st"
+            }
+            for lig, replacement in ligatures.items():
+                cleaned_text = cleaned_text.replace(lig, replacement)
+        else: # Should not happen if input `text` was str or None handled above
+            cleaned_text = "" 
+
+        return cleaned_text

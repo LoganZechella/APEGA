@@ -32,7 +32,7 @@ class ChunkingStrategy(str, Enum):
 class TextChunker:
     """
     Splits parsed documents into manageable, semantically coherent chunks.
-    Supports various chunking strategies.
+    Supports various chunking strategies with graceful fallbacks.
     """
     
     def __init__(
@@ -53,16 +53,51 @@ class TextChunker:
         self.max_chunk_size_tokens = max_chunk_size_tokens
         self.chunk_overlap_tokens = chunk_overlap_tokens
         
-        # Optional semantic splitter
+        # Optional semantic splitter with improved error handling
         self.semantic_splitter = None
+        self.semantic_available = False
+        
         if strategy in [ChunkingStrategy.SEMANTIC, ChunkingStrategy.HYBRID_HIERARCHICAL_SEMANTIC]:
-            try:
-                # Import here to avoid unnecessary dependencies if not using semantic chunking
-                from sentence_transformers import SentenceTransformer
-                self.semantic_splitter = SentenceTransformer('all-MiniLM-L6-v2')
-            except Exception as e:
-                logger.warning(f"Semantic splitter not available ({e}). Falling back to paragraph chunking.")
-                self.strategy = ChunkingStrategy.PARAGRAPH
+            self.semantic_available = self._initialize_semantic_splitter()
+            
+            # If semantic chunking was requested but not available, adjust strategy
+            if not self.semantic_available:
+                if strategy == ChunkingStrategy.SEMANTIC:
+                    logger.warning("Semantic chunking requested but not available. Falling back to paragraph chunking.")
+                    self.strategy = ChunkingStrategy.PARAGRAPH
+                elif strategy == ChunkingStrategy.HYBRID_HIERARCHICAL_SEMANTIC:
+                    logger.warning("Hybrid semantic chunking requested but semantic component not available. Using hierarchical chunking only.")
+                    self.strategy = ChunkingStrategy.HIERARCHICAL
+    
+    def _initialize_semantic_splitter(self) -> bool:
+        """
+        Initialize the semantic splitter with proper error handling.
+        
+        Returns:
+            True if semantic splitter is available, False otherwise
+        """
+        try:
+            # Import here to avoid unnecessary dependencies if not using semantic chunking
+            from sentence_transformers import SentenceTransformer
+            
+            logger.info("Initializing semantic text splitter...")
+            self.semantic_splitter = SentenceTransformer('all-MiniLM-L6-v2')
+            logger.info("Semantic splitter initialized successfully")
+            return True
+            
+        except ImportError as e:
+            logger.warning(f"sentence-transformers library not available: {e}")
+            return False
+        except Exception as e:
+            # This will catch network errors, model download failures, etc.
+            logger.warning(f"Failed to initialize semantic splitter: {e}")
+            logger.info("This could be due to:")
+            logger.info("  - No internet connection to download the model")
+            logger.info("  - Network restrictions blocking access to huggingface.co")
+            logger.info("  - Insufficient disk space for model download")
+            logger.info("  - Missing dependencies for the transformers library")
+            logger.info("Continuing with non-semantic chunking strategies...")
+            return False
     
     def chunk_document(self, parsed_doc: ParsedDocument) -> List[TextChunk]:
         """
@@ -80,30 +115,42 @@ class TextChunker:
         # Create the document hierarchy based on TOC
         document_hierarchy = self._create_document_hierarchy(parsed_doc.text_content, toc)
         
-        # Choose chunking strategy
-        if self.strategy == ChunkingStrategy.PARAGRAPH:
-            chunks = self._paragraph_chunking(parsed_doc)
-        elif self.strategy == ChunkingStrategy.SENTENCE:
-            chunks = self._sentence_chunking(parsed_doc)
-        elif self.strategy == ChunkingStrategy.SLIDING_WINDOW:
-            chunks = self._sliding_window_chunking(parsed_doc)
-        elif self.strategy == ChunkingStrategy.HIERARCHICAL:
-            chunks = self._hierarchical_chunking(parsed_doc, document_hierarchy)
-        elif self.strategy == ChunkingStrategy.SEMANTIC:
-            chunks = self._semantic_chunking(parsed_doc)
-        elif self.strategy == ChunkingStrategy.HYBRID_HIERARCHICAL_SEMANTIC:
-            chunks = self._hybrid_hierarchical_semantic_chunking(parsed_doc, document_hierarchy)
-        else:
-            logger.warning(f"Unknown chunking strategy: {self.strategy}. Falling back to paragraph chunking.")
+        # Choose chunking strategy with fallback handling
+        try:
+            if self.strategy == ChunkingStrategy.PARAGRAPH:
+                chunks = self._paragraph_chunking(parsed_doc)
+            elif self.strategy == ChunkingStrategy.SENTENCE:
+                chunks = self._sentence_chunking(parsed_doc)
+            elif self.strategy == ChunkingStrategy.SLIDING_WINDOW:
+                chunks = self._sliding_window_chunking(parsed_doc)
+            elif self.strategy == ChunkingStrategy.HIERARCHICAL:
+                chunks = self._hierarchical_chunking(parsed_doc, document_hierarchy)
+            elif self.strategy == ChunkingStrategy.SEMANTIC:
+                chunks = self._semantic_chunking(parsed_doc)
+            elif self.strategy == ChunkingStrategy.HYBRID_HIERARCHICAL_SEMANTIC:
+                chunks = self._hybrid_hierarchical_semantic_chunking(parsed_doc, document_hierarchy)
+            else:
+                logger.warning(f"Unknown chunking strategy: {self.strategy}. Falling back to paragraph chunking.")
+                chunks = self._paragraph_chunking(parsed_doc)
+        except Exception as e:
+            logger.error(f"Error during {self.strategy} chunking: {e}")
+            logger.info("Falling back to paragraph chunking...")
             chunks = self._paragraph_chunking(parsed_doc)
         
         # Add table chunks if there are tables
-        table_chunks = self._create_table_chunks(parsed_doc)
-        chunks.extend(table_chunks)
+        try:
+            table_chunks = self._create_table_chunks(parsed_doc)
+            chunks.extend(table_chunks)
+        except Exception as e:
+            logger.warning(f"Error creating table chunks: {e}")
         
         # Ensure chunks are within token limits
-        chunks = self._enforce_chunk_size_limits(chunks)
+        try:
+            chunks = self._enforce_chunk_size_limits(chunks)
+        except Exception as e:
+            logger.warning(f"Error enforcing chunk size limits: {e}")
         
+        logger.info(f"Successfully created {len(chunks)} chunks using {self.strategy} strategy")
         return chunks
     
     def _create_document_hierarchy(self, text_content: str, toc: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -612,6 +659,8 @@ class TextChunker:
         
         # If no hierarchical chunks or semantic splitting not available, return hierarchical chunks
         if not hierarchical_chunks or not self.semantic_splitter:
+            if not self.semantic_splitter:
+                logger.info("Semantic component not available for hybrid chunking, using hierarchical only")
             return hierarchical_chunks
         
         # For each hierarchical chunk that's too large, apply semantic chunking
