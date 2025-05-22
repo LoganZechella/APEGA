@@ -1,116 +1,122 @@
 """
 PDF Parser for APEGA.
-Extracts text, tables, and structure from PDF documents using PyMuPDF (fitz).
+Extracts text, tables, and structure from PDF documents using PyMuPDF and PyMuPDF4LLM.
 """
 
 import fitz  # PyMuPDF
+import pymupdf4llm # New library for robust PDF to Markdown conversion
 import re
 from typing import List, Dict, Any, Tuple, Optional
 import os
 from loguru import logger
-from collections import defaultdict
 
 from src.models.data_models import ParsedDocument, StructuredTable, DocumentType
 
 
 class PdfParser:
     """
-    Extracts text, tables, and structural metadata from PDF documents using PyMuPDF.
-    Preserves layout information as much as possible.
+    Extracts text, tables, and structural metadata from PDF documents using PyMuPDF4LLM.
     """
     
-    def __init__(self, use_ocr: bool = False, ocr_language: str = 'eng'):
+    def __init__(self, use_ocr: bool = False, ocr_language: str = 'eng'): # OCR params might be less relevant now
         """
         Initialize the PDF parser.
         
         Args:
-            use_ocr: Whether to use OCR for text extraction
-            ocr_language: Language for OCR (only used if use_ocr is True)
+            use_ocr: Whether to use OCR (Note: PyMuPDF4LLM handles underlying text extraction)
+            ocr_language: Language for OCR (Note: PyMuPDF4LLM handles underlying text extraction)
         """
         self.use_ocr = use_ocr
         self.ocr_language = ocr_language
-        
-        # Only import pytesseract if OCR is enabled
-        if self.use_ocr:
-            try:
-                import pytesseract
-                self.pytesseract = pytesseract
-            except ImportError:
-                logger.warning("pytesseract not installed. OCR will not be available.")
-                self.use_ocr = False
-    
-    def parse_pdf(self, file_path: str) -> ParsedDocument:
+        # Note: With PyMuPDF4LLM, direct OCR control here might be less critical
+        # as it handles text extraction comprehensively.
+
+    def parse_pdf(self, pdf_path: str, document_id: str, temp_dir: Optional[str] = None) -> ParsedDocument:
         """
-        Parse a PDF file to extract text, tables, and structure.
-        
+        Parse a PDF document using PyMuPDF4LLM to extract content as Markdown.
+
         Args:
-            file_path: Path to the PDF file
-            
+            pdf_path: Path to the PDF file.
+            document_id: A unique identifier for the document.
+            temp_dir: Optional temporary directory for intermediate files (less used with PyMuPDF4LLM's direct conversion).
+
         Returns:
-            A ParsedDocument object containing the extracted content
+            A ParsedDocument object containing the Markdown content and basic metadata.
         """
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"PDF file not found: {file_path}")
-        
-        document_id = os.path.basename(file_path).replace('.pdf', '')
-        
+        logger.info(f"Starting PDF parsing with PyMuPDF4LLM for: {pdf_path}")
         try:
-            # Open the PDF document
-            pdf_document = fitz.open(file_path)
+            # PyMuPDF4LLM's to_markdown function is the core of the new parsing
+            # It converts the entire PDF to a single Markdown string.
+            # page_chunks=True can be useful if we later want to process page by page, 
+            # but for now, a single markdown string is the target.
+            markdown_output = pymupdf4llm.to_markdown(pdf_path, page_chunks=False) # Keep as single markdown string for now
             
-            # Extract document metadata
-            metadata = self._extract_metadata(pdf_document)
+            doc = fitz.open(pdf_path) # Still open with fitz for metadata
+            metadata = self._extract_metadata(doc, pdf_path)
+            doc.close()
+
+            # With PyMuPDF4LLM, tables are part of the markdown_output.
+            # The StructuredTable model might need to be re-evaluated or populated differently
+            # if we want to keep it. For now, tables will be an empty list in ParsedDocument.
+            tables: List[StructuredTable] = [] 
             
-            # Extract text content with layout preservation
-            text_content, tables = self._extract_text_and_tables(pdf_document)
+            # TOC extraction might still be useful for document structure, but the primary
+            # content is now the markdown string.
+            toc = self._extract_toc(fitz.open(pdf_path)) # Use a new fitz instance for TOC
             
-            # Create ParsedDocument
-            parsed_doc = ParsedDocument(
-                document_id=document_id,
-                title=metadata.get('title', document_id),
-                source_path=file_path,
-                document_type=DocumentType.PDF,
-                text_content=text_content,
-                tables=tables,
-                metadata=metadata
-            )
-            
-            pdf_document.close()
-            return parsed_doc
-            
-        except Exception as e:
-            logger.error(f"Error parsing PDF {file_path}: {e}")
-            # Return a minimal document with error information
+            logger.success(f"Successfully parsed PDF with PyMuPDF4LLM: {pdf_path}")
             return ParsedDocument(
                 document_id=document_id,
-                source_path=file_path,
+                source_path=pdf_path,
                 document_type=DocumentType.PDF,
-                text_content="",
-                metadata={"error": str(e)}
+                text_content=markdown_output, # Main content is the full Markdown
+                raw_text_content=markdown_output, # For consistency, can be the same or more raw if needed
+                tables=tables, # Empty for now, as tables are in Markdown
+                images=[], # Image extraction not implemented with this PyMuPDF4LLM flow yet
+                metadata=metadata,
+                table_of_contents=toc,
+                page_count=len(fitz.open(pdf_path)) # Get page count from a new fitz instance
             )
-    
-    def _extract_metadata(self, pdf_document: fitz.Document) -> Dict[str, Any]:
+
+        except Exception as e:
+            logger.error(f"PyMuPDF4LLM failed to parse PDF {pdf_path}: {e}")
+            # Return a minimal ParsedDocument on failure to prevent downstream crashes
+            # Ensure all fields have defaults or are Optional in ParsedDocument
+            return ParsedDocument(
+                document_id=document_id,
+                source_path=pdf_path,
+                document_type=DocumentType.PDF,
+                text_content="", # Default to empty string
+                raw_text_content="",
+                tables=[],
+                images=[],
+                metadata={"title": os.path.basename(pdf_path), "error": str(e)},
+                table_of_contents=[],
+                page_count=0
+            )
+
+    def _extract_metadata(self, pdf_document: fitz.Document, pdf_path: str) -> Dict[str, Any]:
         """
         Extract metadata from the PDF document.
-        
         Args:
             pdf_document: PyMuPDF document object
-            
+            pdf_path: Path to the PDF file
         Returns:
             Dictionary of metadata
         """
-        metadata = {
-            'title': pdf_document.metadata.get('title', ''),
-            'author': pdf_document.metadata.get('author', ''),
-            'subject': pdf_document.metadata.get('subject', ''),
-            'keywords': pdf_document.metadata.get('keywords', ''),
-            'creator': pdf_document.metadata.get('creator', ''),
-            'producer': pdf_document.metadata.get('producer', ''),
-            'page_count': len(pdf_document),
-            'toc': self._extract_toc(pdf_document),
+        metadata = pdf_document.metadata
+        # Ensure basic metadata is present, provide defaults if not
+        return {
+            "title": metadata.get("title") or os.path.basename(pdf_path),
+            "author": metadata.get("author") or "Unknown",
+            "subject": metadata.get("subject") or "Unknown",
+            "producer": metadata.get("producer") or "Unknown",
+            "creationDate": metadata.get("creationDate") or "Unknown",
+            "modDate": metadata.get("modDate") or "Unknown",
+            "page_count": pdf_document.page_count,
+            "encryption": metadata.get("encryption") or "None"
         }
-        return metadata
-    
+
     def _extract_toc(self, pdf_document: fitz.Document) -> List[Dict[str, Any]]:
         """
         Extract the table of contents (TOC) from the PDF document.
@@ -122,159 +128,50 @@ class PdfParser:
             List of TOC entries with title, page number, and level
         """
         toc = []
-        for item in pdf_document.get_toc():
-            if len(item) >= 3:
-                level, title, page = item[:3]
-                toc.append({
-                    'level': level,
-                    'title': title,
-                    'page': page
-                })
-        return toc
-    
-    def _extract_text_and_tables(self, pdf_document: fitz.Document) -> Tuple[str, List[StructuredTable]]:
-        """
-        Extract text and tables from the PDF document.
-        
-        Args:
-            pdf_document: PyMuPDF document object
-            
-        Returns:
-            Tuple of (text_content, tables)
-        """
-        full_text = []
-        tables = []
-        table_counter = 0
-        
-        for page_idx, page in enumerate(pdf_document):
-            page_number = page_idx + 1
-            
-            # Extract text with layout preservation
-            if self.use_ocr:
-                # Use OCR for text extraction
-                text = self._extract_text_with_ocr(page)
-            else:
-                # Use PyMuPDF's built-in text extraction
-                text = page.get_text("text")
-            
-            # Add page information
-            page_text = f"PAGE {page_number}\n{text}\n"
-            full_text.append(page_text)
-            
-            # Extract tables
-            page_tables = self._extract_tables_from_page(page, page_number, table_counter)
-            tables.extend(page_tables)
-            table_counter += len(page_tables)
-        
-        return "\n".join(full_text), tables
-    
-    def _extract_text_with_ocr(self, page: fitz.Page) -> str:
-        """
-        Extract text from a page using OCR.
-        
-        Args:
-            page: PyMuPDF page object
-            
-        Returns:
-            Extracted text
-        """
-        if not hasattr(self, 'pytesseract'):
-            logger.warning("OCR requested but pytesseract is not available.")
-            return page.get_text("text")
-        
+        raw_toc = [] # Initialize raw_toc
         try:
-            # Render page to an image (higher resolution for better OCR)
-            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-            
-            # Convert to PIL Image
-            from PIL import Image
-            import io
-            img = Image.open(io.BytesIO(pix.tobytes("png")))
-            
-            # Run OCR
-            ocr_text = self.pytesseract.image_to_string(img, lang=self.ocr_language)
-            return ocr_text
-            
+            # get_toc() returns a list of lists: [lvl, title, page, pos]
+            # where pos is a Point. For simplicity, we mostly care about lvl, title, page.
+            raw_toc = pdf_document.get_toc(simple=True) 
         except Exception as e:
-            logger.error(f"OCR error: {e}. Falling back to standard text extraction.")
-            return page.get_text("text")
-    
-    def _extract_tables_from_page(self, page: fitz.Page, page_number: int, table_counter: int) -> List[StructuredTable]:
-        """
-        Extract tables from a page.
-        
-        Args:
-            page: PyMuPDF page object
-            page_number: Page number
-            table_counter: Starting counter for table IDs
-            
-        Returns:
-            List of StructuredTable objects
-        """
-        tables = []
-        
-        # Use PyMuPDF's table detection
-        tab = page.find_tables()
-        
-        if tab.tables:
-            for i, table in enumerate(tab.tables):
-                table_id = f"table_{page_number}_{i+1}"
-                
-                # Extract data from the table
-                rows = []
-                for row_idx, row_cells in enumerate(table.extract()): 
-                    cleaned_row = []
-                    if row_cells: # Ensure row_cells is not None
-                        for cell_idx, cell in enumerate(row_cells): 
-                            if cell is None:
-                                cleaned_row.append("") 
-                            else:
-                                cell_text = str(cell) if not isinstance(cell, str) else cell
-                                # Ensure cell_text is not None before replace/strip
-                                cell_text_processed = cell_text.replace("\n", " ").strip() if cell_text is not None else ""
-                                cleaned_row.append(self._clean_text(cell_text_processed))
-                    rows.append(cleaned_row)
-                
-                # Only include non-empty tables
-                if rows and any(cell for row in rows for cell in row):
-                    # Try to determine if the first row is a header
-                    caption = None
-                    if len(rows) > 1:
-                        first_row_text = " ".join(rows[0])
-                        if re.search(r"table|figure|fig\.?|tab\.?", first_row_text.lower()):
-                            caption = first_row_text
-                    
-                    structured_table = StructuredTable(
-                        table_id=table_id,
-                        data=rows,
-                        caption=caption,
-                        page_number=page_number
-                    )
-                    tables.append(structured_table)
-        
-        return tables
-    
-    @staticmethod
-    def _clean_text(text: Optional[str]) -> str: # Allow Optional[str] for input
-        """
-        Clean text by removing extra spaces and attempting to fix ligatures.
-        """
-        if text is None: # Handle None input gracefully
-            return ""
-            
-        # Replace multiple spaces with a single space
-        cleaned_text = re.sub(r'\s+', ' ', text).strip()
-        
-        # Basic ligature replacement (add more as needed)
-        # Ensure cleaned_text is a string before calling replace
-        if isinstance(cleaned_text, str):
-            ligatures = {
-                "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
-                "ﬅ": "ft", "ﬆ": "st"
-            }
-            for lig, replacement in ligatures.items():
-                cleaned_text = cleaned_text.replace(lig, replacement)
-        else: # Should not happen if input `text` was str or None handled above
-            cleaned_text = "" 
+            logger.warning(f"Could not extract TOC for PDF '{pdf_document.metadata.get('title', 'unknown PDF')}' (path: {pdf_document.name}): {e}")
+            return toc # Return empty toc if extraction fails
 
-        return cleaned_text
+        if not raw_toc:
+            logger.info(f"No TOC found or extracted for PDF '{pdf_document.metadata.get('title', 'unknown PDF')}' (path: {pdf_document.name})")
+            return toc
+
+        for item in raw_toc:
+            try:
+                # Defensive access to item elements
+                level = item[0] if len(item) > 0 else 0
+                title = str(item[1]) if len(item) > 1 and item[1] is not None else "Untitled Section"
+                page_num = int(item[2]) if len(item) > 2 and item[2] is not None else 0
+                # PyMuPDF's get_toc page numbers are 1-based. 
+                # No adjustment needed if downstream expects 1-based.
+
+                toc.append({
+                    "level": level,
+                    "title": title.strip(),
+                    "page": page_num
+                })
+            except IndexError as ie:
+                logger.warning(f"Skipping malformed TOC item (IndexError: {ie}) in '{pdf_document.metadata.get('title', 'unknown PDF')}': {item}")
+            except (TypeError, ValueError) as te:
+                logger.warning(f"Skipping malformed TOC item (ConversionError: {te}) in '{pdf_document.metadata.get('title', 'unknown PDF')}': {item}")    
+            except Exception as ex:
+                logger.warning(f"Skipping malformed TOC item (Unexpected Error: {ex}) in '{pdf_document.metadata.get('title', 'unknown PDF')}': {item}")
+        
+        pdf_document.close() # Close the document after TOC extraction
+        return toc
+
+    # Methods like _extract_tables_from_page, _process_page_text, _visual_debug, etc. 
+    # from the old parser are no longer directly used as PyMuPDF4LLM handles this internally.
+    # They can be removed or kept if there's a future need for hybrid approaches.
+
+    # Example of a method that might be removed or adapted:
+    # def _extract_images_from_page(self, page: fitz.Page, page_num: int, temp_dir: str) -> List[Dict[str, Any]]:
+    #     """Extracts images from a single page and saves them."""
+    #     images_info = []
+    #     # ... logic for image extraction ...
+    #     return images_info

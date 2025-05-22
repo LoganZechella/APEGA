@@ -109,7 +109,7 @@ class KnowledgeIngestion:
             try:
                 # Parse document
                 if doc_type == DocumentType.PDF:
-                    parsed_doc = self.pdf_parser.parse_pdf(doc_path)
+                    parsed_doc = self.pdf_parser.parse_pdf(pdf_path=doc_path, document_id=doc_id)
                 else:
                     # For non-PDF documents (not implemented yet)
                     logger.warning(f"Document type {doc_type} not supported yet")
@@ -186,7 +186,7 @@ class KnowledgeIngestion:
             
             # Parse document
             if doc_type == DocumentType.PDF:
-                parsed_doc = self.pdf_parser.parse_pdf(document_path)
+                parsed_doc = self.pdf_parser.parse_pdf(pdf_path=document_path, document_id=doc_id)
             else:
                 stats["error"] = f"Unsupported document type: {doc_type}"
                 return stats

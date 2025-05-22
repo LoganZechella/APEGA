@@ -4,6 +4,7 @@ pydantic>=2.5.0
 
 # PDF Parsing
 PyMuPDF>=1.23.0  # For PDF text and structure extraction
+pymupdf4llm>=1.0.0 # For enhanced PDF to Markdown conversion for LLM/RAG
 pytesseract>=0.3.10  # For OCR support, if needed
 Pillow>=10.0.0  # Required for image processing
 

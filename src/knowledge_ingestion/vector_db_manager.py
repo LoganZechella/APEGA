@@ -10,6 +10,7 @@ import qdrant_client
 from qdrant_client.http import models as qmodels
 from qdrant_client.http.exceptions import UnexpectedResponse
 import time
+import uuid # Added import for UUID generation
 
 from src.models.data_models import EmbeddedChunk, RetrievedContext
 
@@ -124,12 +125,16 @@ class VectorDBManager:
                 # Verify collection configuration
                 collection_info = self.client.get_collection(self.collection_name)
                 actual_size = collection_info.config.params.vectors.size
-                actual_distance = collection_info.config.params.vectors.distance
+                vectors_config = collection_info.config.params.vectors
+                if isinstance(vectors_config, dict):
+                    actual_distance = vectors_config.get('', next(iter(vectors_config.values()))).distance
+                else:
+                    actual_distance = vectors_config.distance
                 
                 if actual_size != self.vector_dimensions:
                     logger.warning(f"Collection vector size ({actual_size}) doesn't match expected size ({self.vector_dimensions})")
                 if actual_distance != self.distance_metric_enum:
-                    logger.warning(f"Collection distance metric ({(actual_distance.value if hasattr(actual_distance, 'value') else actual_distance)}) doesn't match expected metric ({self.distance_metric_enum.value})")
+                    logger.warning(f"Collection distance metric ({actual_distance.value if hasattr(actual_distance, 'value') else actual_distance}) doesn't match expected metric ({self.distance_metric_enum.value})")
                 
         except Exception as e:
             logger.error(f"Error ensuring collection exists: {str(e)}")
@@ -188,7 +193,9 @@ class VectorDBManager:
             
             for chunk in valid_chunks:
                 # Create a point ID from chunk_id (ensure it's a string)
-                point_id = str(chunk.chunk_id)
+                # point_id = str(chunk.chunk_id) # Old way
+                # New way: Generate a deterministic UUID from chunk_id
+                point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk.chunk_id))
                 
                 # Create payload with all metadata and additional fields
                 payload = {
