@@ -124,12 +124,12 @@ class VectorDBManager:
                 # Verify collection configuration
                 collection_info = self.client.get_collection(self.collection_name)
                 actual_size = collection_info.config.params.vectors.size
-                actual_distance = collection_info.config.params.distance
+                actual_distance = collection_info.config.params.vectors.distance
                 
                 if actual_size != self.vector_dimensions:
                     logger.warning(f"Collection vector size ({actual_size}) doesn't match expected size ({self.vector_dimensions})")
                 if actual_distance != self.distance_metric_enum:
-                    logger.warning(f"Collection distance metric ({actual_distance.value if hasattr(actual_distance, 'value') else actual_distance}) doesn't match expected metric ({self.distance_metric_enum.value})")
+                    logger.warning(f"Collection distance metric ({(actual_distance.value if hasattr(actual_distance, 'value') else actual_distance)}) doesn't match expected metric ({self.distance_metric_enum.value})")
                 
         except Exception as e:
             logger.error(f"Error ensuring collection exists: {str(e)}")
