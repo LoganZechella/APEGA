@@ -27,3 +27,6 @@ node_modules/
 *.jsonl.gz.part.*
 
 qdrant_storage/
+
+__pycache__/
+*/__pycache__/
