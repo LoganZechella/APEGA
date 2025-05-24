@@ -3,7 +3,7 @@ RAG Engine Module for APEGA.
 Combines hybrid search, re-ranking, and deep analysis components.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from loguru import logger
 
 from src.rag_engine.hybrid_searcher import HybridSearcher

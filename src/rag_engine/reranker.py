@@ -21,7 +21,7 @@ class ReRanker:
         self,
         api_key: Optional[str] = None,
         model_name: str = "o4-mini",
-        temperature: float = 0.0,
+        temperature: float = 1,
         verbose: bool = False
     ):
         """
@@ -110,7 +110,7 @@ class ReRanker:
                     ],
                     temperature=self.temperature,
                     response_format={"type": "json_object"},
-                    max_tokens=150
+                    max_completion_tokens=150
                 )
                 
                 # Extract score from response

@@ -337,7 +337,7 @@ class VectorDBManager:
                 query_vector=query_embedding,
                 limit=top_k,
                 with_payload=True,
-                filter=filter_obj
+                query_filter=filter_obj
             )
             
             # Convert to RetrievedContext objects

@@ -435,7 +435,7 @@ class TextChunker:
                                 current_node = new_node
                                 current_level = level
                                 node_stack = [root, new_node]
-                            
+                        
                             is_heading = True
                             break
                             
@@ -533,14 +533,10 @@ class TextChunker:
                     except Exception as chunk_creation_error:
                         logger.error(f"Error creating chunk {chunk_index}: {chunk_creation_error}")
                         # Continue anyway to avoid losing all chunks
-                    
-                    chunk_index += 1
-                    current_chunk_text = paragraph + "\n\n"
-                    current_chunk_tokens = para_tokens
-                else:
-                    current_chunk_text += paragraph + "\n\n"
-                    current_chunk_tokens += para_tokens
-                    
+                
+                chunk_index += 1
+                current_chunk_text = paragraph + "\n\n"
+                current_chunk_tokens = para_tokens
             except Exception as para_error:
                 logger.warning(f"Error processing paragraph {para_idx}: {para_error}")
                 continue

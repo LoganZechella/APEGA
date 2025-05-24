@@ -10,7 +10,7 @@ from rank_bm25 import BM25Okapi
 
 from src.knowledge_ingestion.embedding_generator import EmbeddingGenerator
 from src.knowledge_ingestion.vector_db_manager import VectorDBManager
-from src.models.data_models import RetrievedContext
+from src.models.data_models import RetrievedContext, TextChunk
 
 
 class HybridSearcher:
@@ -101,8 +101,13 @@ class HybridSearcher:
         """
         try:
             # Generate embedding for the query text
-            query_chunks = [{"chunk_id": "query", "document_id": "query", "text": query_text, "metadata": {}}]
-            embedded_query = self.embedding_generator.generate_embeddings([query_chunks[0]])
+            query_chunk = TextChunk(
+                chunk_id="query",
+                document_id="query",
+                text=query_text,
+                metadata={}
+            )
+            embedded_query = self.embedding_generator.generate_embeddings([query_chunk])
             
             if not embedded_query or embedded_query[0].embedding_vector is None:
                 logger.warning("Failed to generate query embedding for dense search")
